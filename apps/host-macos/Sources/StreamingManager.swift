@@ -19,7 +19,8 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
         status = "Creating virtual display…"
         Task { [weak self] in
             guard let self else { return }
-            let displayID = DisplayOSCreateVirtualDisplay("DisplayOS (receiver.name)", 2560, 1440, 60)
+            let displayName = "Display OS (\(receiver.name))"
+            let displayID = DisplayOSCreateVirtualDisplay(displayName, 2560, 1440, 60)
             guard displayID != 0 else {
                 status = "Virtual display creation failed. This macOS version does not expose the POC API."
                 return
@@ -70,6 +71,11 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
         DisplayOSDestroyVirtualDisplay()
         isStreaming = false
         if !status.hasPrefix("Could not") && !status.hasPrefix("Virtual") && !status.hasPrefix("Receiver") { status = "Select a receiver to create and stream a 2560 × 1440 virtual display." }
+    }
+
+    func removeDisplay() {
+        stop()
+        status = "Streaming display removed."
     }
 
     private func configureEncoder() throws {

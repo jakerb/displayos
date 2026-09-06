@@ -57,6 +57,7 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var connected: Receiver?
     @StateObject private var streaming = StreamingManager()
+    @State private var showingRemoveConfirmation = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -81,9 +82,13 @@ struct ContentView: View {
                             Text("\(receiver.resolution) · v\(receiver.version)").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(connected?.id == receiver.id ? "Disconnect" : "Connect") {
-                            if connected?.id == receiver.id { streaming.stop(); connected = nil }
-                            else { connected = receiver; streaming.start(receiver: receiver) }
+                        if connected?.id == receiver.id {
+                            Button("Remove display", role: .destructive) { showingRemoveConfirmation = true }
+                        } else {
+                            Button("Connect") {
+                                connected = receiver
+                                streaming.start(receiver: receiver)
+                            }
                         }
                     }.padding(.vertical, 5)
                 }.listStyle(.inset)
@@ -93,6 +98,15 @@ struct ContentView: View {
                     Text(streaming.status) }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(4)
             }
+        }
+        .alert("Remove streaming display?", isPresented: $showingRemoveConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                streaming.removeDisplay()
+                connected = nil
+            }
+        } message: {
+            Text("This stops streaming and removes the virtual display from macOS Displays.")
         }
     }
 }
