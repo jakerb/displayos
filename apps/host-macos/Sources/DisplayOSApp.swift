@@ -32,6 +32,11 @@ final class ReceiverDiscovery: ObservableObject {
     init() { start() }
 
     func start() {
+        browser?.cancel()
+        browser = nil
+        receivers = []
+        status = "Searching for DisplayOS receivers…"
+
         let params = NWParameters.tcp
         let browser = NWBrowser(for: .bonjour(type: "_displayos._tcp", domain: nil), using: params)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
@@ -40,14 +45,18 @@ final class ReceiverDiscovery: ObservableObject {
                 return Receiver(name: name, endpoint: interface?.name ?? "Network", version: "0.1.0", resolution: "2560 × 1440 @ 60 Hz", transport: "Ethernet / LAN", serviceType: type, serviceDomain: domain)
             }.sorted { $0.name < $1.name }
             Task { @MainActor [weak self] in
+                guard self?.browser === browser else { return }
                 self?.receivers = found
-                self?.status = found.isEmpty ? "No receivers found. Check the cable and receiver boot screen." : "(found.count) receiver\(found.count == 1 ? "" : "s") available"
+                self?.status = found.isEmpty ? "No receivers found. Check the cable and receiver boot screen." : "\(found.count) receiver\(found.count == 1 ? "" : "s") available"
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
             guard case .failed(let error) = state else { return }
             let message = "Discovery unavailable: \(error.localizedDescription)"
-            Task { @MainActor [weak self] in self?.status = message }
+            Task { @MainActor [weak self] in
+                guard self?.browser === browser else { return }
+                self?.status = message
+            }
         }
         browser.start(queue: .main)
         self.browser = browser
@@ -72,7 +81,16 @@ struct ContentView: View {
     private var receiversView: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("DisplayOS").font(.largeTitle.weight(.bold))
-            Text(discovery.status).foregroundStyle(.secondary)
+            HStack {
+                Text(discovery.status).foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    discovery.start()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .help("Search again for available receivers")
+            }
             if discovery.receivers.isEmpty {
                 ContentUnavailableView("Waiting for a receiver", systemImage: "display.trianglebadge.exclamationmark", description: Text("Boot the iMac from the DisplayOS USB image, then connect it by Ethernet."))
             } else {
