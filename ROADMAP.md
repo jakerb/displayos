@@ -1,5 +1,8 @@
 # POC roadmap
 
+Open defects and their acceptance criteria are tracked in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
 - [x] Milestone 0: monorepo bootstrap and macOS application build.
 - [x] Milestone 1 (foundation): mDNS receiver advertisement and host discovery UI.
 - [ ] Milestone 2: ScreenCaptureKit capture, VideoToolbox H.264 encode, receiver decode/render.
