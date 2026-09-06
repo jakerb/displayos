@@ -80,14 +80,25 @@ struct ImagerView: View {
         guard let drive = selectedDrive else { return }
         message = "Writing requires administrator approval…"
         let escapedISOPath = isoPath.replacingOccurrences(of: "'", with: "'\\\"'\\\"'")
-        let command = "diskutil unmountDisk /dev/\(drive.id) && dd if='\(escapedISOPath)' of=/dev/r\(drive.id) bs=4m status=progress && diskutil eject /dev/\(drive.id)"
+        // The ISO is a hybrid boot image, so it must be written directly to the
+        // whole disk. Do not format it first. `status=progress` is GNU dd-only
+        // and is unsupported by the BSD dd bundled with macOS.
+        let command = "diskutil unmountDisk /dev/\(drive.id) && dd if='\(escapedISOPath)' of=/dev/r\(drive.id) bs=4m && sync && diskutil eject /dev/\(drive.id)"
         let process = Process()
+        let errorOutput = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", "do shell script \"\(command.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))\" with administrator privileges"]
+        process.standardError = errorOutput
         do {
             try process.run()
             process.waitUntilExit()
-            message = process.terminationStatus == 0 ? "USB written and ejected." : "Writing failed. Confirm the ISO and USB drive, then try again."
+            if process.terminationStatus == 0 {
+                message = "USB written and ejected."
+            } else {
+                let detail = String(data: errorOutput.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                message = detail?.isEmpty == false ? "Writing failed: \(detail!)" : "Writing failed. Confirm the ISO and USB drive, then try again."
+            }
         } catch {
             message = "Could not start the writer: \(error.localizedDescription)"
         }
