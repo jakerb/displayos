@@ -11,4 +11,5 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSScreenCaptureUsageDescription</key><string>DisplayOS captures the virtual display it creates in order to send it to your receiver.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>DisplayOS writes the selected receiver image to a removable USB drive.</string>
 </dict></plist>
