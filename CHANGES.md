@@ -51,6 +51,40 @@ Updated `apps/host-macos/Sources/DisplayOSApp.swift`:
 This prevents receiver discovery from being mistaken for a video session.
 Only an explicit click on **Connect** now opens the stream port.
 
+### Accurate host connection state
+
+Updated `apps/host-macos/Sources/StreamingManager.swift` after observing that
+the app displayed `Streaming` even though `lsof` and `netstat` showed no TCP
+connection to port 9877:
+
+- Stream setup now waits asynchronously for `NWConnection` to enter the
+  `ready` state before configuring capture and encoding.
+- Connection failure and cancellation now terminate setup with the real
+  Network framework error.
+- Added identity checks after asynchronous setup operations so cancelled or
+  superseded work cannot publish a stale success status.
+- Added monitoring for failures after the connection becomes ready.
+- Added a small lock-protected, single-use continuation gate so concurrent
+  Network framework state callbacks cannot resume startup more than once.
+- Capture is stopped if the receiver connection disappears while capture is
+being initialized.
+
+After a live run appeared stuck on `Creating virtual display`, a process stack
+sample confirmed that CoreDisplay had created the virtual display and the app
+was actually waiting for its network connection. The receiver was advertised
+on multiple interfaces, but the host discarded Bonjour's interface-specific
+endpoint and reconstructed an unscoped service endpoint. The host now:
+
+- Stores the exact `NWEndpoint` returned by each Bonjour browse result.
+- Uses that endpoint when opening the video connection, preserving its network
+  interface scope.
+- Displays `Connecting to <receiver>…` after virtual-display creation so the
+  current startup stage is no longer mislabeled.
+
+The host can therefore no longer claim to be streaming solely because screen
+capture started while its receiver connection was pending or had already
+failed.
+
 ### Receiver protocol hardening
 
 Updated both receiver source copies:
@@ -67,7 +101,30 @@ The receiver now:
 - Reports that it is waiting for the first frame, then reports that it is
   starting the video pipeline.
 - Continues processing subsequent length-prefixed frames with the existing
-  size validation.
+size validation.
+
+### Direct-Ethernet IPv6 listener fix
+
+While the host was stuck on `Connecting to DisplayOS iMac…`, live Bonjour and
+socket diagnostics established that:
+
+- Bonjour advertised the receiver on interface `en8` at the IPv6 link-local
+  address `fe80::6e5a:40d3:ceae:a905%en8`.
+- The receiver's capabilities port 9876 was unreachable at that address.
+- The advertised video port 9877 returned `connection refused`.
+- `announce.py` created both servers as IPv4-only listeners (`AF_INET` and
+  `0.0.0.0`), so it could not accept the IPv6 connection advertised by Avahi
+  on a direct Ethernet link.
+
+Both packaged copies of `announce.py` now:
+
+- Create the video socket with `AF_INET6` and bind to `::`.
+- Clear `IPV6_V6ONLY` so the Linux listener also accepts IPv4-mapped clients.
+- Use a `DualStackHTTPServer` with the same behavior for the capabilities
+  endpoint.
+
+This keeps normal IPv4 support while allowing the receiver to work when a
+direct Ethernet connection only resolves to an IPv6 link-local address.
 
 As a result, port scanners, connectivity checks, and clients that disconnect
 without sending the DisplayOS protocol no longer start and stop the playback

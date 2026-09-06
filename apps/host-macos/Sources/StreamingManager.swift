@@ -26,32 +26,16 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
                 return
             }
             do {
-                let endpoint = NWEndpoint.service(name: receiver.name, type: receiver.serviceType, domain: receiver.serviceDomain ?? "local.", interface: nil)
-                let connection = NWConnection(to: endpoint, using: .tcp)
+                status = "Connecting to \(receiver.name)…"
+                let connection = NWConnection(to: receiver.connectionEndpoint, using: .tcp)
                 self.connection = connection
-                connection.stateUpdateHandler = { [weak self] state in
-                    let message: String?
-                    let shouldStop: Bool
-                    switch state {
-                    case .ready:
-                        message = "Connected. Request Screen Recording permission when prompted."
-                        shouldStop = false
-                    case .failed(let error):
-                        message = "Receiver connection failed: \(error.localizedDescription)"
-                        shouldStop = true
-                    default:
-                        message = nil
-                        shouldStop = false
-                    }
-                    Task { @MainActor [weak self] in
-                        guard let self, let message else { return }
-                        self.status = message
-                        if shouldStop { self.stop() }
-                    }
-                }
-                connection.start(queue: outputQueue)
+                try await self.waitUntilReady(connection)
+                guard self.connection === connection else { return }
+                status = "Connected. Request Screen Recording permission when prompted."
+                self.monitor(connection)
                 try self.configureEncoder()
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                guard self.connection === connection else { return }
                 guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
                     throw StreamError.virtualDisplayNotVisible
                 }
@@ -63,10 +47,15 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
                 let capture = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: config, delegate: nil)
                 try capture.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
                 try await capture.startCapture()
+                guard self.connection === connection else {
+                    try? await capture.stopCapture()
+                    return
+                }
                 self.stream = capture
                 self.isStreaming = true
                 self.status = "Streaming 2560 × 1440 @ 60 Hz to \(receiver.name)"
             } catch {
+                guard self.connection != nil else { return }
                 self.status = "Could not start stream: \(error.localizedDescription)"
                 self.stop()
             }
@@ -87,6 +76,39 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
     func removeDisplay() {
         stop()
         status = "Streaming display removed."
+    }
+
+    private func waitUntilReady(_ connection: NWConnection) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            let gate = ConnectionReadyGate()
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    guard gate.claim() else { return }
+                    continuation.resume()
+                case .failed(let error):
+                    guard gate.claim() else { return }
+                    continuation.resume(throwing: error)
+                case .cancelled:
+                    guard gate.claim() else { return }
+                    continuation.resume(throwing: StreamError.connectionCancelled)
+                default:
+                    break
+                }
+            }
+            connection.start(queue: outputQueue)
+        }
+    }
+
+    private func monitor(_ connection: NWConnection) {
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard case .failed(let error) = state else { return }
+            Task { @MainActor [weak self, weak connection] in
+                guard let self, let connection, self.connection === connection else { return }
+                self.status = "Receiver connection failed: \(error.localizedDescription)"
+                self.stop()
+            }
+        }
     }
 
     private func configureEncoder() throws {
@@ -144,6 +166,19 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
     }
 }
 
+private final class ConnectionReadyGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !completed else { return false }
+        completed = true
+        return true
+    }
+}
+
 extension StreamingManager: SCStreamOutput {
     nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
         guard outputType == .screen, CMSampleBufferIsValid(sampleBuffer) else { return }
@@ -157,6 +192,6 @@ private let compressionCallback: VTCompressionOutputCallback = { refcon, _, stat
     manager.sendEncoded(sampleBuffer)
 }
 
-enum StreamError: LocalizedError { case encoderUnavailable, virtualDisplayNotVisible
-    var errorDescription: String? { switch self { case .encoderUnavailable: return "H.264 hardware encoder unavailable"; case .virtualDisplayNotVisible: return "macOS did not enumerate the virtual display" } }
+enum StreamError: LocalizedError { case connectionCancelled, encoderUnavailable, virtualDisplayNotVisible
+    var errorDescription: String? { switch self { case .connectionCancelled: return "receiver connection was cancelled"; case .encoderUnavailable: return "H.264 hardware encoder unavailable"; case .virtualDisplayNotVisible: return "macOS did not enumerate the virtual display" } }
 }

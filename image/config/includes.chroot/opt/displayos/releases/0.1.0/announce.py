@@ -30,6 +30,16 @@ class PipelineFailed(Exception):
     pass
 
 
+class DualStackHTTPServer(HTTPServer):
+    """Listen on IPv6 and accept IPv4-mapped clients when Linux permits it."""
+
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 def set_state(state, detail=""):
     """Atomically publish state for receiver-ui without competing for tty1."""
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
@@ -96,9 +106,10 @@ def stop_player(player):
 
 
 def video_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("0.0.0.0", 9877))
+    server.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+    server.bind(("::", 9877))
     server.listen(1)
     logger.info("Listening for H.264 streams on TCP port 9877")
     set_state("waiting")
@@ -173,4 +184,4 @@ class Handler(BaseHTTPRequestHandler):
 
 
 threading.Thread(target=video_server, daemon=True).start()
-HTTPServer(("0.0.0.0", 9876), Handler).serve_forever()
+DualStackHTTPServer(("::", 9876), Handler).serve_forever()

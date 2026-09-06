@@ -20,6 +20,7 @@ struct Receiver: Identifiable, Equatable, Sendable {
     let transport: String
     let serviceType: String
     let serviceDomain: String?
+    let connectionEndpoint: NWEndpoint
 
     var id: String { "\(name)|\(serviceType)|\(serviceDomain ?? "")" }
 }
@@ -44,7 +45,7 @@ final class ReceiverDiscovery: ObservableObject {
             let found = results.compactMap { result -> Receiver? in
                 guard case let .service(name: name, type: type, domain: domain, interface: interface) = result.endpoint else { return nil }
                 let address = "\(name).\(domain) · TCP 9877"
-                return Receiver(name: name, endpoint: address, version: "0.1.0", resolution: "2560 × 1440 @ 60 Hz", transport: interface?.name ?? "Network", serviceType: type, serviceDomain: domain)
+                return Receiver(name: name, endpoint: address, version: "0.1.0", resolution: "2560 × 1440 @ 60 Hz", transport: interface?.name ?? "Network", serviceType: type, serviceDomain: domain, connectionEndpoint: result.endpoint)
             }.sorted { $0.name < $1.name }
             Task { @MainActor [weak self] in
                 guard self?.browser === browser else { return }
