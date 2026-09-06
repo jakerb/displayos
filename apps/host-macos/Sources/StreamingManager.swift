@@ -11,6 +11,7 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
     private var stream: SCStream?
     private var connection: NWConnection?
     private var compressionSession: VTCompressionSession?
+    private let frameGate = FrameGate()
     private let outputQueue = DispatchQueue(label: "com.displayos.capture", qos: .userInteractive)
     private let encodingQueue = DispatchQueue(label: "com.displayos.encode", qos: .userInteractive)
 
@@ -68,6 +69,7 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
         connection?.cancel(); connection = nil
         if let session = compressionSession { VTCompressionSessionInvalidate(session) }
         compressionSession = nil
+        frameGate.reset()
         DisplayOSDestroyVirtualDisplay()
         isStreaming = false
         if !status.hasPrefix("Could not") && !status.hasPrefix("Virtual") && !status.hasPrefix("Receiver") { status = "Select a receiver to create and stream a 2560 × 1440 virtual display." }
@@ -119,28 +121,44 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: 60 as CFTypeRef)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: 35_000_000 as CFTypeRef)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: 18_000_000 as CFTypeRef)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: 60 as CFTypeRef)
         VTCompressionSessionPrepareToEncodeFrames(session)
     }
 
     nonisolated func encode(_ sampleBuffer: CMSampleBuffer) {
         guard let image = sampleBuffer.imageBuffer, let session = compressionSession else { return }
+        // Drop capture frames before encoding while the previous encoded frame
+        // is still pending. Queuing every frame here turns a short slowdown
+        // into continuously increasing display latency.
+        guard frameGate.claim() else { return }
         let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        VTCompressionSessionEncodeFrame(session, imageBuffer: image, presentationTimeStamp: time, duration: .invalid, frameProperties: nil, sourceFrameRefcon: nil, infoFlagsOut: nil)
+        let status = VTCompressionSessionEncodeFrame(session, imageBuffer: image, presentationTimeStamp: time, duration: .invalid, frameProperties: nil, sourceFrameRefcon: nil, infoFlagsOut: nil)
+        if status != noErr { frameGate.release() }
     }
 
     nonisolated func sendEncoded(_ sampleBuffer: CMSampleBuffer) {
-        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer), let connection else { return }
+        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer), let connection else {
+            frameGate.release()
+            return
+        }
         var length = 0; var dataPointer: UnsafeMutablePointer<Int8>?
-        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &dataPointer) == kCMBlockBufferNoErr, let dataPointer else { return }
+        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &dataPointer) == kCMBlockBufferNoErr, let dataPointer else {
+            frameGate.release()
+            return
+        }
         let avcc = Data(bytes: dataPointer, count: length)
         var annexB = Self.parameterSets(from: sampleBuffer)
         annexB.append(Self.annexB(avcc))
-        guard !annexB.isEmpty, annexB.count < 16_000_000 else { return }
+        guard !annexB.isEmpty, annexB.count < 16_000_000 else {
+            frameGate.release()
+            return
+        }
         var size = UInt32(annexB.count).bigEndian
         var packet = Data(bytes: &size, count: 4); packet.append(annexB)
-        connection.send(content: packet, completion: .contentProcessed { _ in })
+        connection.send(content: packet, completion: .contentProcessed { [weak self] _ in
+            self?.frameGate.release()
+        })
     }
 
     private static func annexB(_ avcc: Data) -> Data {
@@ -176,6 +194,34 @@ private final class ConnectionReadyGate: @unchecked Sendable {
         guard !completed else { return false }
         completed = true
         return true
+    }
+}
+
+private final class FrameGate: @unchecked Sendable {
+    private let lock = NSLock()
+    // VideoToolbox may retain initial input while starting the encoder even
+    // with frame reordering disabled, so allow a small pipeline window.
+    private let capacity = 3
+    private var inFlight = 0
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard inFlight < capacity else { return false }
+        inFlight += 1
+        return true
+    }
+
+    func release() {
+        lock.lock()
+        if inFlight > 0 { inFlight -= 1 }
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        inFlight = 0
+        lock.unlock()
     }
 }
 

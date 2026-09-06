@@ -143,6 +143,33 @@ Finder metadata (`com.apple.FinderInfo`) had been attached to the generated
 bundle and caused strict signature verification to fail. Clearing extended
 attributes before signing produces a valid ad-hoc signed bundle.
 
+### Streaming latency improvements
+
+Live profiling of a working session found that the direct Ethernet adapter had
+negotiated at `100baseTX` (100 Mbps), while the encoder was configured for 35
+Mbps and allowed every captured frame to be queued without backpressure.
+
+Updated `apps/host-macos/Sources/StreamingManager.swift`:
+
+- Reduced the H.264 target bitrate from 35 Mbps to 18 Mbps, leaving more
+  headroom on a 100 Mbps link for bursts and TCP overhead.
+- Added a lock-protected frame gate permitting a bounded three-frame pipeline.
+  A one-frame limit was tested and rejected because VideoToolbox can retain its
+  initial input until subsequent frames arrive, deadlocking encoder startup.
+- Frames are dropped before encoding while the previous frame is pending. This
+  avoids an ever-growing TCP send queue while preserving H.264 prediction,
+  because frames omitted before encoding never become codec references.
+- The gate is released on encoding failure, packet-conversion failure, and send
+  completion, and fully reset on stream shutdown.
+
+Updated `image/config/package-lists/displayos.list.chroot`:
+
+- Added `gstreamer1.0-vaapi` so Intel receivers can use VA-API hardware H.264
+  decoding instead of relying on a CPU decoder selected by `decodebin`.
+
+The frame-queue and bitrate changes are included in the rebuilt host app. The
+VA-API package requires rebuilding and reflashing the receiver ISO.
+
 ### Verification performed
 
 - Both receiver Python files passed `python3 -m py_compile`.
