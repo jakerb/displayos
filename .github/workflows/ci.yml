@@ -1,13 +1,25 @@
 name: CI
+
 on: [push, pull_request]
+
 jobs:
-  test:
+  macos-host:
+    name: Build macOS host app
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apps/host-macos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -c release
+
+  receiver-and-image-config:
+    name: Validate receiver and image configuration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+      - name: Check Python receiver scripts
+        run: python3 -m py_compile apps/receiver/announce.py image/config/includes.chroot/opt/displayos/releases/0.1.0/announce.py
+      - name: Check build scripts
+        run: bash -n scripts/build-macos-app.sh image/build/build.sh image/config/hooks/live/0100-displayos.hook.chroot

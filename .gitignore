@@ -18,9 +18,14 @@ image/build/live-build/
 .env
 .env.*
 !.env.example
+__pycache__/
+*.pyc
 *.pem
 *.key
 *.p12
 *.mobileprovision
 secrets/
 credentials/
+
+# Downloaded CI logs and other local diagnostics
+logs/
