@@ -27,6 +27,16 @@ make image
 
 The ISO is written to `image/out/displayos-poc-amd64.iso`. It is for Intel Macs only, not Apple Silicon.
 
+## Update receiver services without reflashing
+
+After installing an ISO that includes the update bootstrap, package a receiver release with:
+
+```bash
+make receiver-release VERSION=0.1.1
+```
+
+Upload `dist/displayos-receiver-service.tar.gz` and its `.sha256` sidecar as assets on the GitHub Release tagged `v0.1.1`. On its next boot, the receiver checks the latest release, verifies the checksum, installs the bundle atomically, and restarts only its receiver services. The ISO still supplies the kernel, firmware, and GStreamer runtime.
+
 ## Flash and boot
 
 Use the macOS app’s **Create bootable USB** tab, or flash with a tool such as balenaEtcher. This destroys the selected USB drive. On the iMac, insert the USB stick and hold **Option (⌥)** while booting, then choose EFI Boot.

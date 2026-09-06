@@ -3,7 +3,7 @@ Description=DisplayOS receiver capability advertisement
 After=network-online.target avahi-daemon.service
 Wants=network-online.target
 [Service]
-ExecStart=/usr/bin/python3 /opt/displayos/current/announce.py
+ExecStart=/usr/local/lib/displayos/receiver-launch announce.py
 Restart=always
 RestartSec=3
 [Install]

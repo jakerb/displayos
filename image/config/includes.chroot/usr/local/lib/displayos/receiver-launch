@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+name=${1:?receiver file name required}
+installed=/var/lib/displayos/current/$name
+base=/opt/displayos/releases/0.1.0/$name
+
+if [ -x "$installed" ] || [ "$name" = announce.py ] && [ -r "$installed" ]; then
+  exec "$installed"
+fi
+exec "$base"

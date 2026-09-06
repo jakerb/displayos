@@ -5,7 +5,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=TERM=linux
-ExecStart=/opt/displayos/current/receiver-ui
+ExecStart=/usr/local/lib/displayos/receiver-launch receiver-ui
 Restart=always
 RestartSec=2
 StandardInput=tty

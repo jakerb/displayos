@@ -1,0 +1,12 @@
+[Unit]
+Description=DisplayOS receiver service updater
+Wants=network-online.target
+After=network-online.target
+Before=displayos-announce.service displayos-receiver.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/displayos/displayos-update --check
+
+[Install]
+WantedBy=multi-user.target
