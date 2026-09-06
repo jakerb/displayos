@@ -78,22 +78,28 @@ struct ImagerView: View {
 
     private func writeImage() {
         guard let drive = selectedDrive else { return }
-        message = "Writing requires administrator approval…"
-        let escapedISOPath = isoPath.replacingOccurrences(of: "'", with: "'\\\"'\\\"'")
-        // The ISO is a hybrid boot image, so it must be written directly to the
-        // whole disk. Do not format it first. `status=progress` is GNU dd-only
-        // and is unsupported by the BSD dd bundled with macOS.
-        let command = "diskutil unmountDisk /dev/\(drive.id) && dd if='\(escapedISOPath)' of=/dev/r\(drive.id) bs=4m && sync && diskutil eject /dev/\(drive.id)"
+        message = "Opening Terminal for administrator-authorized writing…"
+        let escapedISOPath = shellQuoted(isoPath)
+        // Raw-device writes are protected by macOS's privacy system. Running
+        // this in Terminal lets macOS attribute the write to Terminal, where
+        // the user can grant removable-volume access and see command output.
+        let command = "sudo /usr/sbin/diskutil unmountDisk /dev/\(drive.id) && sudo /bin/dd if=\(escapedISOPath) of=/dev/r\(drive.id) bs=4m && sync && sudo /usr/sbin/diskutil eject /dev/\(drive.id)"
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(appleScriptQuoted(command))"
+        end tell
+        """
         let process = Process()
         let errorOutput = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", "do shell script \"\(command.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))\" with administrator privileges"]
+        process.arguments = ["-e", script]
         process.standardError = errorOutput
         do {
             try process.run()
             process.waitUntilExit()
             if process.terminationStatus == 0 {
-                message = "USB written and ejected."
+                message = "Terminal is writing the USB. Enter your administrator password there and wait for it to eject."
             } else {
                 let detail = String(data: errorOutput.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -102,6 +108,16 @@ struct ImagerView: View {
         } catch {
             message = "Could not start the writer: \(error.localizedDescription)"
         }
+    }
+
+    private func shellQuoted(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\\"'\\\"'"))'"
+    }
+
+    private func appleScriptQuoted(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     private func diskutilPlist(arguments: [String]) throws -> [String: Any] {
