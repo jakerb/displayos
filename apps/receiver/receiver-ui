@@ -1,0 +1,14 @@
+#!/bin/sh
+# POC receiver UI: owns tty1 so a Linux login/session is never exposed.
+set -eu
+clear
+printf '\033[?25l\033[2J\033[H'
+while :; do
+  printf '\033[H\033[2J\n\n'
+  printf '                 DisplayOS\n\n'
+  printf '          Waiting for a connection\n\n'
+  printf '  Ethernet: %s\n' "$(ip -br link | awk '$1 != "lo" && $2 == "UP" {print "Connected"; exit} END {if (NR == 0) print "Disconnected"}')"
+  printf '  Pairing code: %s\n\n' "${DISPLAYOS_PAIRING_CODE:-AB12-CD34}"
+  printf '  For a direct connection, connect the cable to your Mac.\n'
+  sleep 3
+done

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+clear
+printf '\033[?25l\033[2J\033[H'
+while :; do
+  printf '\033[H\033[2J\n\n                 DisplayOS\n\n          Waiting for a connection\n\n'
+  printf '  Connect Ethernet to your Mac and open the DisplayOS app.\n'
+  printf '  Pairing code: %s\n' "${DISPLAYOS_PAIRING_CODE:-AB12-CD34}"
+  sleep 3
+done

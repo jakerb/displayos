@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+install -d /var/lib/displayos /etc/displayos
+ln -sfn /opt/displayos/releases/0.1.0 /opt/displayos/current
+systemctl enable displayos-receiver.service
+systemctl enable displayos-announce.service
+systemctl mask getty@tty1.service
+echo 'DISPLAYOS_DEVICE_NAME=DisplayOS iMac' > /etc/displayos/receiver.conf

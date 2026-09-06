@@ -1,0 +1,26 @@
+# macOS and Xcode
+.DS_Store
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Swift build products and local build caches
+.build/
+.build-cache/
+apps/host-macos/.build/
+dist/
+
+# Generated live-image artifacts
+image/out/
+image/build/live-build/
+
+# Local configuration, credentials, and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.mobileprovision
+secrets/
+credentials/

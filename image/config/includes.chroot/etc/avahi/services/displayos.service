@@ -1,0 +1,2 @@
+<?xml version="1.0" standalone='no'?><!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group><name replace-wildcards="yes">DisplayOS iMac</name><service><type>_displayos._tcp</type><port>9877</port><txt-record>version=0.1.0</txt-record><txt-record>codec=h264</txt-record><txt-record>mode=2560x1440@60</txt-record></service></service-group>

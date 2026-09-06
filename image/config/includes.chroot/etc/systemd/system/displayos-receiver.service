@@ -1,0 +1,16 @@
+[Unit]
+Description=DisplayOS fullscreen receiver UI
+After=network-online.target plymouth-quit.service
+Wants=network-online.target
+[Service]
+Type=simple
+Environment=TERM=linux
+ExecStart=/usr/bin/openvt -c 1 -f -- /opt/displayos/current/receiver-ui
+Restart=always
+RestartSec=2
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+[Install]
+WantedBy=multi-user.target
