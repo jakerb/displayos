@@ -47,7 +47,7 @@ final class ReceiverDiscovery: ObservableObject {
             Task { @MainActor [weak self] in
                 guard self?.browser === browser else { return }
                 self?.receivers = found
-                self?.status = found.isEmpty ? "No receivers found. Check the cable and receiver boot screen." : "\(found.count) receiver\(found.count == 1 ? "" : "s") available"
+                self?.status = found.isEmpty ? "No receivers found. Check the cable and receiver boot screen." : "\(found.count) receiver\(found.count == 1 ? "" : "s") discovered"
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
