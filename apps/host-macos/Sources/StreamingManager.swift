@@ -30,12 +30,23 @@ final class StreamingManager: NSObject, ObservableObject, @unchecked Sendable {
                 let connection = NWConnection(to: endpoint, using: .tcp)
                 self.connection = connection
                 connection.stateUpdateHandler = { [weak self] state in
-                    Task { @MainActor in
-                        switch state {
-                        case .ready: self?.status = "Connected. Request Screen Recording permission when prompted."
-                        case .failed(let error): self?.status = "Receiver connection failed: \(error.localizedDescription)"; self?.stop()
-                        default: break
-                        }
+                    let message: String?
+                    let shouldStop: Bool
+                    switch state {
+                    case .ready:
+                        message = "Connected. Request Screen Recording permission when prompted."
+                        shouldStop = false
+                    case .failed(let error):
+                        message = "Receiver connection failed: \(error.localizedDescription)"
+                        shouldStop = true
+                    default:
+                        message = nil
+                        shouldStop = false
+                    }
+                    Task { @MainActor [weak self] in
+                        guard let self, let message else { return }
+                        self.status = message
+                        if shouldStop { self.stop() }
                     }
                 }
                 connection.start(queue: outputQueue)

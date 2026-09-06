@@ -12,7 +12,7 @@ struct DisplayOSApp: App {
     }
 }
 
-struct Receiver: Identifiable, Equatable {
+struct Receiver: Identifiable, Equatable, Sendable {
     let id = UUID()
     let name: String
     let endpoint: String
@@ -39,13 +39,15 @@ final class ReceiverDiscovery: ObservableObject {
                 guard case let .service(name: name, type: type, domain: domain, interface: interface) = result.endpoint else { return nil }
                 return Receiver(name: name, endpoint: interface?.name ?? "Network", version: "0.1.0", resolution: "2560 × 1440 @ 60 Hz", transport: "Ethernet / LAN", serviceType: type, serviceDomain: domain)
             }.sorted { $0.name < $1.name }
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.receivers = found
                 self?.status = found.isEmpty ? "No receivers found. Check the cable and receiver boot screen." : "(found.count) receiver\(found.count == 1 ? "" : "s") available"
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
-            if case .failed(let error) = state { Task { @MainActor in self?.status = "Discovery unavailable: \(error.localizedDescription)" } }
+            guard case .failed(let error) = state else { return }
+            let message = "Discovery unavailable: \(error.localizedDescription)"
+            Task { @MainActor [weak self] in self?.status = message }
         }
         browser.start(queue: .main)
         self.browser = browser
