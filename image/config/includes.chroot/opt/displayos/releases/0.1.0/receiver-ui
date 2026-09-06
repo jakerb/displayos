@@ -1,10 +1,45 @@
 #!/bin/sh
 set -eu
-clear
-printf '\033[?25l\033[2J\033[H'
+
+STATE_FILE=/run/displayos/receiver-state
+last_state=''
+last_detail=''
+
 while :; do
-  printf '\033[H\033[2J\n\n                 DisplayOS\n\n          Waiting for a connection\n\n'
-  printf '  Connect Ethernet to your Mac and open the DisplayOS app.\n'
-  printf '  Pairing code: %s\n' "${DISPLAYOS_PAIRING_CODE:-AB12-CD34}"
-  sleep 3
+  state=waiting
+  detail=''
+  if [ -r "$STATE_FILE" ]; then
+    state=$(sed -n '1p' "$STATE_FILE" || true)
+    detail=$(sed -n '2p' "$STATE_FILE" || true)
+  fi
+
+  if [ "$state" != "$last_state" ] || [ "$detail" != "$last_detail" ]; then
+    printf '\033[?25l\033[2J\033[H'
+    case "$state" in
+      waiting|'')
+        printf '\n\n                 DisplayOS\n\n          Waiting for a connection\n\n'
+        printf '  Connect Ethernet to your Mac and open the DisplayOS app.\n'
+        printf '  Pairing code: %s\n' "${DISPLAYOS_PAIRING_CODE:-AB12-CD34}"
+        ;;
+      connecting)
+        printf '\n\n                 DisplayOS\n\n          Connecting to your Mac…\n\n'
+        printf '  %s\n' "${detail:-Preparing video playback}"
+        ;;
+      streaming)
+        # Do not write to tty1 while kmssink owns the DRM output.
+        :
+        ;;
+      failed)
+        printf '\n\n                 DisplayOS\n\n          Video playback failed\n\n'
+        printf '  %s\n\n' "${detail:-See journalctl -u displayos-announce for details.}"
+        printf '  The receiver is ready for another connection.\n'
+        ;;
+      *)
+        printf '\n\n                 DisplayOS\n\n          Receiver status: %s\n' "$state"
+        ;;
+    esac
+    last_state=$state
+    last_detail=$detail
+  fi
+  sleep 1
 done
