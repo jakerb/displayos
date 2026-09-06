@@ -97,7 +97,9 @@ struct ImagerView: View {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-        process.arguments = arguments + ["-plist"]
+        // `diskutil info` accepts global flags before its disk argument, while
+        // `diskutil list` accepts the same ordering without an argument.
+        process.arguments = [arguments[0], "-plist"] + Array(arguments.dropFirst())
         process.standardOutput = output
         try process.run()
         process.waitUntilExit()
