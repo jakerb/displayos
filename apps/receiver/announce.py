@@ -109,15 +109,19 @@ def video_server():
         streaming = False
         failure = ""
         logger.info("Host connected from %s:%s", *address)
-        set_state("connecting", "Starting the video pipeline")
+        set_state("connecting", "Waiting for the first video frame")
         try:
+            # Do not allocate DRM/KMS resources merely because something opened
+            # the advertised port. Discovery checks and port scanners connect
+            # without speaking the framed video protocol.
+            header = receive_exact(client, 4)
+            frame_size = struct.unpack(">I", header)[0]
+            if not 0 < frame_size <= MAX_FRAME_BYTES:
+                raise PipelineFailed(f"Invalid H.264 frame size: {frame_size}")
+            frame = receive_exact(client, frame_size)
+            set_state("connecting", "Starting the video pipeline")
             player = start_player()
             while True:
-                header = receive_exact(client, 4)
-                frame_size = struct.unpack(">I", header)[0]
-                if not 0 < frame_size <= MAX_FRAME_BYTES:
-                    raise PipelineFailed(f"Invalid H.264 frame size: {frame_size}")
-                frame = receive_exact(client, frame_size)
                 if player.poll() is not None:
                     raise PipelineFailed(f"GStreamer exited with status {player.returncode}. See journalctl -u displayos-announce.")
                 assert player.stdin is not None
@@ -136,6 +140,11 @@ def video_server():
                     streaming = True
                     set_state("streaming")
                     logger.info("First frame accepted; streaming is active")
+                header = receive_exact(client, 4)
+                frame_size = struct.unpack(">I", header)[0]
+                if not 0 < frame_size <= MAX_FRAME_BYTES:
+                    raise PipelineFailed(f"Invalid H.264 frame size: {frame_size}")
+                frame = receive_exact(client, frame_size)
         except ClientDisconnected:
             logger.info("Host disconnected")
         except (OSError, PipelineFailed) as error:

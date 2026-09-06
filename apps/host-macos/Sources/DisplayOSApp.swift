@@ -29,17 +29,12 @@ final class ReceiverDiscovery: ObservableObject {
     @Published var receivers: [Receiver] = []
     @Published var status = "Searching for DisplayOS receivers…"
     private var browser: NWBrowser?
-    private var candidates: [String: Receiver] = [:]
-    private var probes: [String: NWConnection] = [:]
 
     init() { start() }
 
     func start() {
         browser?.cancel()
         browser = nil
-        probes.values.forEach { $0.cancel() }
-        probes = [:]
-        candidates = [:]
         receivers = []
         status = "Searching for DisplayOS receivers…"
 
@@ -53,7 +48,10 @@ final class ReceiverDiscovery: ObservableObject {
             }.sorted { $0.name < $1.name }
             Task { @MainActor [weak self] in
                 guard self?.browser === browser else { return }
-                self?.checkReachability(of: found)
+                self?.receivers = found
+                self?.status = found.isEmpty
+                    ? "No receivers found. Check the cable and receiver boot screen."
+                    : "\(found.count) receiver\(found.count == 1 ? "" : "s") discovered"
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
@@ -66,69 +64,6 @@ final class ReceiverDiscovery: ObservableObject {
         }
         browser.start(queue: .main)
         self.browser = browser
-    }
-
-    private func checkReachability(of found: [Receiver]) {
-        let nextCandidates = Dictionary(uniqueKeysWithValues: found.map { ($0.id, $0) })
-        let removedProbeIDs = probes.keys.filter { nextCandidates[$0] == nil }
-        for id in removedProbeIDs {
-            probes[id]?.cancel()
-            probes[id] = nil
-        }
-        candidates = nextCandidates
-        receivers.removeAll { nextCandidates[$0.id] == nil }
-
-        for receiver in found where probes[receiver.id] == nil && !receivers.contains(receiver) {
-            probe(receiver)
-        }
-        updateStatus()
-    }
-
-    private func probe(_ receiver: Receiver) {
-        let endpoint = NWEndpoint.service(name: receiver.name, type: receiver.serviceType, domain: receiver.serviceDomain ?? "local.", interface: nil)
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        let id = receiver.id
-        probes[id] = connection
-        connection.stateUpdateHandler = { [weak self, weak connection] state in
-            switch state {
-            case .ready:
-                connection?.cancel()
-                Task { @MainActor [weak self] in self?.finishProbe(id: id, receiver: receiver, reachable: true) }
-            case .failed:
-                Task { @MainActor [weak self] in self?.finishProbe(id: id, receiver: receiver, reachable: false) }
-            default:
-                break
-            }
-        }
-        connection.start(queue: .main)
-        Task { @MainActor [weak self, weak connection] in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard let self, let connection, self.probes[id] === connection else { return }
-            connection.cancel()
-            self.finishProbe(id: id, receiver: receiver, reachable: false)
-        }
-    }
-
-    private func finishProbe(id: String, receiver: Receiver, reachable: Bool) {
-        guard probes[id] != nil else { return }
-        probes[id] = nil
-        if reachable, candidates[id] != nil, !receivers.contains(receiver) {
-            receivers.append(receiver)
-            receivers.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        }
-        updateStatus()
-    }
-
-    private func updateStatus() {
-        if candidates.isEmpty {
-            status = "No receivers found. Check the cable and receiver boot screen."
-        } else if !probes.isEmpty {
-            status = "Checking \(candidates.count) discovered receiver\(candidates.count == 1 ? "" : "s")…"
-        } else if receivers.isEmpty {
-            status = "No reachable receivers found."
-        } else {
-            status = "\(receivers.count) reachable receiver\(receivers.count == 1 ? "" : "s")"
-        }
     }
 }
 
